@@ -15,7 +15,7 @@ type: application
 # This is the chart version. This version number should be incremented each time you make changes
 # to the chart and its templates, including the app version.
 # Versions are expected to follow Semantic Versioning (https://semver.org/)
-version: 0.1.1
+version: 0.1.2
 
 # This is the version number of the application being deployed. This version number should be
 # incremented each time you make changes to the application. Versions are not expected to
@@ -24,8 +24,8 @@ version: 0.1.1
 appVersion: "1.16.0"
 dependencies:
   - name: guard
-    version: 0.1.6
+    version: 0.1.8
     repository: https://adshmh.github.io/test-helm-chart-release
   - name: watch
-    version: 0.1.4
+    version: 0.1.5
     repository: https://adshmh.github.io/test-helm-chart-release
