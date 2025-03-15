@@ -101,7 +101,13 @@ jobs:
         if: steps.manual-filter.outputs.guard == 'true'
         run: |
           echo "Releasing guard chart..."
+          # Upload the packaged chart
           cr upload -o "${{ github.repository_owner }}" -r "${{ github.event.repository.name }}" -p .cr-release-packages-guard --token "${{ secrets.GITHUB_TOKEN }}" --skip-existing
+          
+          # Create index directory
+          mkdir -p .cr-index
+          
+          # Index the chart and push
           cr index -o "${{ github.repository_owner }}" -r "${{ github.event.repository.name }}" -p .cr-release-packages-guard --push
         env:
           CR_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
@@ -159,7 +165,13 @@ jobs:
         if: steps.manual-filter.outputs.watch == 'true'
         run: |
           echo "Releasing watch chart..."
+          # Upload the packaged chart
           cr upload -o "${{ github.repository_owner }}" -r "${{ github.event.repository.name }}" -p .cr-release-packages-watch --token "${{ secrets.GITHUB_TOKEN }}" --skip-existing
+          
+          # Create index directory
+          mkdir -p .cr-index
+          
+          # Index the chart and push
           cr index -o "${{ github.repository_owner }}" -r "${{ github.event.repository.name }}" -p .cr-release-packages-watch --push
         env:
           CR_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
@@ -217,7 +229,13 @@ jobs:
         if: steps.manual-filter.outputs.path == 'true'
         run: |
           echo "Releasing path chart..."
+          # Upload the packaged chart
           cr upload -o "${{ github.repository_owner }}" -r "${{ github.event.repository.name }}" -p .cr-release-packages-path --token "${{ secrets.GITHUB_TOKEN }}" --skip-existing
+          
+          # Create index directory
+          mkdir -p .cr-index
+          
+          # Index the chart and push
           cr index -o "${{ github.repository_owner }}" -r "${{ github.event.repository.name }}" -p .cr-release-packages-path --push
         env:
           CR_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
