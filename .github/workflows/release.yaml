@@ -78,8 +78,7 @@ jobs:
           echo "Watch changed: ${{ steps.manual-filter.outputs.watch }}"
           echo "Path changed: ${{ steps.manual-filter.outputs.path }}"
       
-      # Process charts - Two-phase approach
-      # Phase 1: Build and make all charts available locally first
+      # Build guard chart
       - name: Build guard chart
         if: steps.manual-filter.outputs.guard == 'true'
         run: |
@@ -88,43 +87,115 @@ jobs:
           helm dependency build charts/guard
           helm package charts/guard -d .cr-local-charts
       
+      # Build watch chart
       - name: Build watch chart
         if: steps.manual-filter.outputs.watch == 'true'
         run: |
           echo "Building watch chart..."
           mkdir -p .cr-local-charts
           
-          # If guard was updated and is a dependency, use the local version
-          if grep -q "name: guard" charts/watch/Chart.yaml && [ -f "$(ls -1 .cr-local-charts/guard-*.tgz 2>/dev/null | head -1)" ]; then
-            echo "Using local guard chart for dependency"
-            mkdir -p charts/watch/charts
-            cp .cr-local-charts/guard-*.tgz charts/watch/charts/
+          # Check dependency structure first
+          yq_cmd="grep"
+          if command -v yq &> /dev/null; then
+            yq_cmd="yq"
           fi
           
-          helm dependency build charts/watch
+          # If chart depends on guard, create local reference instead of repository
+          if $yq_cmd "name: guard" charts/watch/Chart.yaml; then
+            echo "Setting up local guard dependency for watch chart"
+            
+            # Create temporary Chart.yaml with local dependencies
+            cat charts/watch/Chart.yaml > charts/watch/Chart.yaml.bak
+            
+            # Create local version of Chart.yaml - this is a simple approach, use a proper YAML parser in production
+            sed -i 's|repository: .*github.io.*guard.*|repository: "file://$(pwd)/.cr-local-charts"|g' charts/watch/Chart.yaml || true
+            sed -i 's|repository: "https://.*github.io.*guard.*|repository: "file://$(pwd)/.cr-local-charts"|g' charts/watch/Chart.yaml || true
+            
+            # Copy guard chart to local directory to ensure it's available
+            if [ -f "$(ls -1 .cr-local-charts/guard-*.tgz 2>/dev/null | head -1)" ]; then
+              echo "Using newly built guard chart"
+            else
+              echo "Building guard chart for dependency"
+              helm dependency build charts/guard
+              helm package charts/guard -d .cr-local-charts
+            fi
+          fi
+          
+          # Build with local dependencies
+          echo "Chart.yaml contents for reference:"
+          cat charts/watch/Chart.yaml
+          
+          helm dependency build charts/watch || (mv charts/watch/Chart.yaml.bak charts/watch/Chart.yaml && helm dependency build charts/watch)
           helm package charts/watch -d .cr-local-charts
+          
+          # Restore original Chart.yaml if we modified it
+          if [ -f charts/watch/Chart.yaml.bak ]; then
+            mv charts/watch/Chart.yaml.bak charts/watch/Chart.yaml
+          fi
       
+      # Build path chart
       - name: Build path chart
         if: steps.manual-filter.outputs.path == 'true'
         run: |
           echo "Building path chart..."
           mkdir -p .cr-local-charts
           
-          # If dependencies were updated, use the local versions
-          if grep -q "name: guard" charts/path/Chart.yaml && [ -f "$(ls -1 .cr-local-charts/guard-*.tgz 2>/dev/null | head -1)" ]; then
-            echo "Using local guard chart for dependency"
-            mkdir -p charts/path/charts
-            cp .cr-local-charts/guard-*.tgz charts/path/charts/
+          # Check dependency structure first
+          yq_cmd="grep"
+          if command -v yq &> /dev/null; then
+            yq_cmd="yq"
           fi
           
-          if grep -q "name: watch" charts/path/Chart.yaml && [ -f "$(ls -1 .cr-local-charts/watch-*.tgz 2>/dev/null | head -1)" ]; then
-            echo "Using local watch chart for dependency"
-            mkdir -p charts/path/charts
-            cp .cr-local-charts/watch-*.tgz charts/path/charts/
+          # Create temporary Chart.yaml
+          cat charts/path/Chart.yaml > charts/path/Chart.yaml.bak
+          
+          # Set up local guard dependency if it exists
+          if $yq_cmd "name: guard" charts/path/Chart.yaml; then
+            echo "Setting up local guard dependency for path chart"
+            
+            # Create local version of Chart.yaml
+            sed -i 's|repository: .*github.io.*guard.*|repository: "file://$(pwd)/.cr-local-charts"|g' charts/path/Chart.yaml || true
+            sed -i 's|repository: "https://.*github.io.*guard.*|repository: "file://$(pwd)/.cr-local-charts"|g' charts/path/Chart.yaml || true
+            
+            # Ensure guard chart is available
+            if [ -f "$(ls -1 .cr-local-charts/guard-*.tgz 2>/dev/null | head -1)" ]; then
+              echo "Using existing guard chart"
+            else
+              echo "Building guard chart for dependency"
+              helm dependency build charts/guard
+              helm package charts/guard -d .cr-local-charts
+            fi
           fi
           
-          helm dependency build charts/path
+          # Set up local watch dependency if it exists
+          if $yq_cmd "name: watch" charts/path/Chart.yaml; then
+            echo "Setting up local watch dependency for path chart"
+            
+            # Create local version of Chart.yaml
+            sed -i 's|repository: .*github.io.*watch.*|repository: "file://$(pwd)/.cr-local-charts"|g' charts/path/Chart.yaml || true
+            sed -i 's|repository: "https://.*github.io.*watch.*|repository: "file://$(pwd)/.cr-local-charts"|g' charts/path/Chart.yaml || true
+            
+            # Ensure watch chart is available
+            if [ -f "$(ls -1 .cr-local-charts/watch-*.tgz 2>/dev/null | head -1)" ]; then
+              echo "Using existing watch chart"
+            else
+              echo "Building watch chart for dependency"
+              helm dependency build charts/watch
+              helm package charts/watch -d .cr-local-charts
+            fi
+          fi
+          
+          # Build with local dependencies
+          echo "Chart.yaml contents for reference:"
+          cat charts/path/Chart.yaml
+          
+          helm dependency build charts/path || (mv charts/path/Chart.yaml.bak charts/path/Chart.yaml && helm dependency build charts/path)
           helm package charts/path -d .cr-local-charts
+          
+          # Restore original Chart.yaml
+          if [ -f charts/path/Chart.yaml.bak ]; then
+            mv charts/path/Chart.yaml.bak charts/path/Chart.yaml
+          fi
       
       # Phase 2: Move all packaged charts to release directory
       - name: Prepare charts for release
