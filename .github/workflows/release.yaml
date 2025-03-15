@@ -104,12 +104,36 @@ jobs:
           # Upload the packaged chart
           cr upload -o "${{ github.repository_owner }}" -r "${{ github.event.repository.name }}" -p .cr-release-packages-guard --token "${{ secrets.GITHUB_TOKEN }}" --skip-existing
           
-          # Clean up and recreate index directory
-          rm -rf .cr-index
-          mkdir -p .cr-index
+          # Manual index update approach
+          echo "Manually handling index update to avoid conflicts..."
           
-          # Index the chart with a clean index directory
-          cr index -o "${{ github.repository_owner }}" -r "${{ github.event.repository.name }}" -p .cr-release-packages-guard --push
+          # Setup git for gh-pages
+          git fetch origin gh-pages
+          git checkout gh-pages
+          
+          # Create temporary index
+          mkdir -p .cr-index-tmp
+          
+          # Generate index for just this chart without pushing
+          cr index -o "${{ github.repository_owner }}" -r "${{ github.event.repository.name }}" -p .cr-release-packages-guard -i .cr-index-tmp/index.yaml
+          
+          # Merge with existing index if it exists
+          if [ -f "index.yaml" ]; then
+            echo "Merging with existing index.yaml..."
+            helm repo index .cr-release-packages-guard --url https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/ --merge index.yaml
+            cp .cr-release-packages-guard/index.yaml .
+          else
+            echo "Creating new index.yaml..."
+            cp .cr-index-tmp/index.yaml .
+          fi
+          
+          # Commit and push the updated index
+          git add index.yaml
+          git commit -m "Update Helm chart index with guard chart" || echo "No changes to commit"
+          git push origin gh-pages
+          
+          # Return to original branch
+          git checkout -
         env:
           CR_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
       
@@ -169,12 +193,36 @@ jobs:
           # Upload the packaged chart
           cr upload -o "${{ github.repository_owner }}" -r "${{ github.event.repository.name }}" -p .cr-release-packages-watch --token "${{ secrets.GITHUB_TOKEN }}" --skip-existing
           
-          # Clean up and recreate index directory
-          rm -rf .cr-index
-          mkdir -p .cr-index
+          # Manual index update approach
+          echo "Manually handling index update to avoid conflicts..."
           
-          # Index the chart with a clean index directory
-          cr index -o "${{ github.repository_owner }}" -r "${{ github.event.repository.name }}" -p .cr-release-packages-watch --push
+          # Setup git for gh-pages
+          git fetch origin gh-pages
+          git checkout gh-pages
+          
+          # Create temporary index
+          mkdir -p .cr-index-tmp
+          
+          # Generate index for just this chart without pushing
+          cr index -o "${{ github.repository_owner }}" -r "${{ github.event.repository.name }}" -p .cr-release-packages-watch -i .cr-index-tmp/index.yaml
+          
+          # Merge with existing index if it exists
+          if [ -f "index.yaml" ]; then
+            echo "Merging with existing index.yaml..."
+            helm repo index .cr-release-packages-watch --url https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/ --merge index.yaml
+            cp .cr-release-packages-watch/index.yaml .
+          else
+            echo "Creating new index.yaml..."
+            cp .cr-index-tmp/index.yaml .
+          fi
+          
+          # Commit and push the updated index
+          git add index.yaml
+          git commit -m "Update Helm chart index with watch chart" || echo "No changes to commit"
+          git push origin gh-pages
+          
+          # Return to original branch
+          git checkout -
         env:
           CR_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
       
@@ -234,11 +282,35 @@ jobs:
           # Upload the packaged chart
           cr upload -o "${{ github.repository_owner }}" -r "${{ github.event.repository.name }}" -p .cr-release-packages-path --token "${{ secrets.GITHUB_TOKEN }}" --skip-existing
           
-          # Clean up and recreate index directory
-          rm -rf .cr-index
-          mkdir -p .cr-index
+          # Manual index update approach
+          echo "Manually handling index update to avoid conflicts..."
           
-          # Index the chart with a clean index directory
-          cr index -o "${{ github.repository_owner }}" -r "${{ github.event.repository.name }}" -p .cr-release-packages-path --push
+          # Setup git for gh-pages
+          git fetch origin gh-pages
+          git checkout gh-pages
+          
+          # Create temporary index
+          mkdir -p .cr-index-tmp
+          
+          # Generate index for just this chart without pushing
+          cr index -o "${{ github.repository_owner }}" -r "${{ github.event.repository.name }}" -p .cr-release-packages-path -i .cr-index-tmp/index.yaml
+          
+          # Merge with existing index if it exists
+          if [ -f "index.yaml" ]; then
+            echo "Merging with existing index.yaml..."
+            helm repo index .cr-release-packages-path --url https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/ --merge index.yaml
+            cp .cr-release-packages-path/index.yaml .
+          else
+            echo "Creating new index.yaml..."
+            cp .cr-index-tmp/index.yaml .
+          fi
+          
+          # Commit and push the updated index
+          git add index.yaml
+          git commit -m "Update Helm chart index with path chart" || echo "No changes to commit"
+          git push origin gh-pages
+          
+          # Return to original branch
+          git checkout -
         env:
           CR_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
