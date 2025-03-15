@@ -1,5 +1,16 @@
 apiVersion: v1
 entries:
+  guard:
+  - apiVersion: v2
+    appVersion: 1.16.0
+    created: "2025-03-15T02:00:51.672924687Z"
+    description: A Helm chart for Kubernetes
+    digest: 88a9b400b960351747e384b26adcf1decd939f35aba8c9e495716442a1e08990
+    name: guard
+    type: application
+    urls:
+    - https://github.com/adshmh/test-helm-chart-release/releases/download/guard-0.1.4/guard-0.1.4.tgz
+    version: 0.1.4
   watch:
   - apiVersion: v2
     appVersion: 1.16.0
@@ -11,4 +22,4 @@ entries:
     urls:
     - https://github.com/adshmh/test-helm-chart-release/releases/download/watch-0.1.4/watch-0.1.4.tgz
     version: 0.1.4
-generated: "2025-03-15T01:18:32.653582979Z"
+generated: "2025-03-15T02:00:51.672934987Z"
