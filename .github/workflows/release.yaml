@@ -78,156 +78,146 @@ jobs:
           echo "Watch changed: ${{ steps.manual-filter.outputs.watch }}"
           echo "Path changed: ${{ steps.manual-filter.outputs.path }}"
       
-      # Build guard chart
-      - name: Build guard chart
+      # SEQUENTIAL PROCESSING: Process, release and index each chart individually
+      
+      # GUARD CHART - Process, Release, and Index (if changed)
+      - name: Process guard chart
         if: steps.manual-filter.outputs.guard == 'true'
         run: |
-          echo "Building guard chart..."
-          mkdir -p .cr-local-charts
+          echo "Processing guard chart..."
+          
+          # Create release directory
+          mkdir -p .cr-release-packages-guard
+          
+          # Build dependencies and package
           helm dependency build charts/guard
-          helm package charts/guard -d .cr-local-charts
+          helm package charts/guard -d .cr-release-packages-guard
+          
+          # List packaged charts
+          echo "Packaged guard chart:"
+          ls -la .cr-release-packages-guard/
       
-      # Build watch chart
-      - name: Build watch chart
+      - name: Release guard chart
+        if: steps.manual-filter.outputs.guard == 'true'
+        run: |
+          echo "Releasing guard chart..."
+          cr upload -o "${{ github.repository_owner }}" -r "${{ github.event.repository.name }}" -p .cr-release-packages-guard --token "${{ secrets.GITHUB_TOKEN }}" --skip-existing
+          cr index -o "${{ github.repository_owner }}" -r "${{ github.event.repository.name }}" -p .cr-release-packages-guard --push
+        env:
+          CR_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
+      
+      - name: Wait for guard chart to be available
+        if: steps.manual-filter.outputs.guard == 'true'
+        run: |
+          echo "Waiting for guard chart to be available in the GitHub Pages repository..."
+          sleep 30  # Initial wait
+          
+          # Add the repository and update
+          helm repo add repo-under-test https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}
+          
+          # Try up to 5 times to verify the chart is available
+          for i in {1..5}; do
+            echo "Attempt $i: Updating Helm repositories..."
+            helm repo update
+            
+            if helm search repo repo-under-test/guard | grep -q guard; then
+              echo "Guard chart is now available!"
+              break
+            else
+              echo "Chart not yet available, waiting 30 seconds..."
+              sleep 30
+            fi
+            
+            if [ $i -eq 5 ]; then
+              echo "Warning: Guard chart is not yet available after multiple attempts."
+              # Continue anyway, but log the warning
+            fi
+          done
+      
+      # WATCH CHART - Process, Release, and Index (if changed)
+      - name: Process watch chart
         if: steps.manual-filter.outputs.watch == 'true'
         run: |
-          echo "Building watch chart..."
-          mkdir -p .cr-local-charts
+          echo "Processing watch chart..."
           
-          # Check dependency structure first
-          yq_cmd="grep"
-          if command -v yq &> /dev/null; then
-            yq_cmd="yq"
-          fi
+          # Create release directory
+          mkdir -p .cr-release-packages-watch
           
-          # If chart depends on guard, create local reference instead of repository
-          if $yq_cmd "name: guard" charts/watch/Chart.yaml; then
-            echo "Setting up local guard dependency for watch chart"
-            
-            # Create temporary Chart.yaml with local dependencies
-            cat charts/watch/Chart.yaml > charts/watch/Chart.yaml.bak
-            
-            # Create local version of Chart.yaml - this is a simple approach, use a proper YAML parser in production
-            sed -i 's|repository: .*github.io.*guard.*|repository: "file://$(pwd)/.cr-local-charts"|g' charts/watch/Chart.yaml || true
-            sed -i 's|repository: "https://.*github.io.*guard.*|repository: "file://$(pwd)/.cr-local-charts"|g' charts/watch/Chart.yaml || true
-            
-            # Copy guard chart to local directory to ensure it's available
-            if [ -f "$(ls -1 .cr-local-charts/guard-*.tgz 2>/dev/null | head -1)" ]; then
-              echo "Using newly built guard chart"
-            else
-              echo "Building guard chart for dependency"
-              helm dependency build charts/guard
-              helm package charts/guard -d .cr-local-charts
-            fi
-          fi
+          # Make sure we have the latest repo
+          helm repo add repo-under-test https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }} || true
+          helm repo update
           
-          # Build with local dependencies
-          echo "Chart.yaml contents for reference:"
-          cat charts/watch/Chart.yaml
+          # Build dependencies and package
+          helm dependency build charts/watch
+          helm package charts/watch -d .cr-release-packages-watch
           
-          helm dependency build charts/watch || (mv charts/watch/Chart.yaml.bak charts/watch/Chart.yaml && helm dependency build charts/watch)
-          helm package charts/watch -d .cr-local-charts
-          
-          # Restore original Chart.yaml if we modified it
-          if [ -f charts/watch/Chart.yaml.bak ]; then
-            mv charts/watch/Chart.yaml.bak charts/watch/Chart.yaml
-          fi
+          # List packaged charts
+          echo "Packaged watch chart:"
+          ls -la .cr-release-packages-watch/
       
-      # Build path chart
-      - name: Build path chart
+      - name: Release watch chart
+        if: steps.manual-filter.outputs.watch == 'true'
+        run: |
+          echo "Releasing watch chart..."
+          cr upload -o "${{ github.repository_owner }}" -r "${{ github.event.repository.name }}" -p .cr-release-packages-watch --token "${{ secrets.GITHUB_TOKEN }}" --skip-existing
+          cr index -o "${{ github.repository_owner }}" -r "${{ github.event.repository.name }}" -p .cr-release-packages-watch --push
+        env:
+          CR_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
+      
+      - name: Wait for watch chart to be available
+        if: steps.manual-filter.outputs.watch == 'true'
+        run: |
+          echo "Waiting for watch chart to be available in the GitHub Pages repository..."
+          sleep 30  # Initial wait
+          
+          # Add the repository and update
+          helm repo add repo-under-test https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }} || true
+          
+          # Try up to 5 times to verify the chart is available
+          for i in {1..5}; do
+            echo "Attempt $i: Updating Helm repositories..."
+            helm repo update
+            
+            if helm search repo repo-under-test/watch | grep -q watch; then
+              echo "Watch chart is now available!"
+              break
+            else
+              echo "Chart not yet available, waiting 30 seconds..."
+              sleep 30
+            fi
+            
+            if [ $i -eq 5 ]; then
+              echo "Warning: Watch chart is not yet available after multiple attempts."
+              # Continue anyway, but log the warning
+            fi
+          done
+      
+      # PATH CHART - Process, Release, and Index (if changed)
+      - name: Process path chart
         if: steps.manual-filter.outputs.path == 'true'
         run: |
-          echo "Building path chart..."
-          mkdir -p .cr-local-charts
+          echo "Processing path chart..."
           
-          # Check dependency structure first
-          yq_cmd="grep"
-          if command -v yq &> /dev/null; then
-            yq_cmd="yq"
-          fi
+          # Create release directory
+          mkdir -p .cr-release-packages-path
           
-          # Create temporary Chart.yaml
-          cat charts/path/Chart.yaml > charts/path/Chart.yaml.bak
+          # Make sure we have the latest repo
+          helm repo add repo-under-test https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }} || true
+          helm repo update
           
-          # Set up local guard dependency if it exists
-          if $yq_cmd "name: guard" charts/path/Chart.yaml; then
-            echo "Setting up local guard dependency for path chart"
-            
-            # Create local version of Chart.yaml
-            sed -i 's|repository: .*github.io.*guard.*|repository: "file://$(pwd)/.cr-local-charts"|g' charts/path/Chart.yaml || true
-            sed -i 's|repository: "https://.*github.io.*guard.*|repository: "file://$(pwd)/.cr-local-charts"|g' charts/path/Chart.yaml || true
-            
-            # Ensure guard chart is available
-            if [ -f "$(ls -1 .cr-local-charts/guard-*.tgz 2>/dev/null | head -1)" ]; then
-              echo "Using existing guard chart"
-            else
-              echo "Building guard chart for dependency"
-              helm dependency build charts/guard
-              helm package charts/guard -d .cr-local-charts
-            fi
-          fi
+          # Build dependencies and package
+          helm dependency build charts/path
+          helm package charts/path -d .cr-release-packages-path
           
-          # Set up local watch dependency if it exists
-          if $yq_cmd "name: watch" charts/path/Chart.yaml; then
-            echo "Setting up local watch dependency for path chart"
-            
-            # Create local version of Chart.yaml
-            sed -i 's|repository: .*github.io.*watch.*|repository: "file://$(pwd)/.cr-local-charts"|g' charts/path/Chart.yaml || true
-            sed -i 's|repository: "https://.*github.io.*watch.*|repository: "file://$(pwd)/.cr-local-charts"|g' charts/path/Chart.yaml || true
-            
-            # Ensure watch chart is available
-            if [ -f "$(ls -1 .cr-local-charts/watch-*.tgz 2>/dev/null | head -1)" ]; then
-              echo "Using existing watch chart"
-            else
-              echo "Building watch chart for dependency"
-              helm dependency build charts/watch
-              helm package charts/watch -d .cr-local-charts
-            fi
-          fi
-          
-          # Build with local dependencies
-          echo "Chart.yaml contents for reference:"
-          cat charts/path/Chart.yaml
-          
-          helm dependency build charts/path || (mv charts/path/Chart.yaml.bak charts/path/Chart.yaml && helm dependency build charts/path)
-          helm package charts/path -d .cr-local-charts
-          
-          # Restore original Chart.yaml
-          if [ -f charts/path/Chart.yaml.bak ]; then
-            mv charts/path/Chart.yaml.bak charts/path/Chart.yaml
-          fi
+          # List packaged charts
+          echo "Packaged path chart:"
+          ls -la .cr-release-packages-path/
       
-      # Phase 2: Move all packaged charts to release directory
-      - name: Prepare charts for release
-        if: steps.manual-filter.outputs.guard == 'true' || steps.manual-filter.outputs.watch == 'true' || steps.manual-filter.outputs.path == 'true'
+      - name: Release path chart
+        if: steps.manual-filter.outputs.path == 'true'
         run: |
-          mkdir -p .cr-release-packages
-          if [ -d ".cr-local-charts" ]; then
-            cp .cr-local-charts/*.tgz .cr-release-packages/ || true
-            echo "Charts ready for release:"
-            ls -la .cr-release-packages/
-          fi
-      
-      # Upload all packaged charts at once
-      - name: Upload charts
-        if: steps.manual-filter.outputs.guard == 'true' || steps.manual-filter.outputs.watch == 'true' || steps.manual-filter.outputs.path == 'true'
-        run: |
-          if [ -n "$(ls -A .cr-release-packages)" ]; then
-            echo "Uploading packaged charts..."
-            cr upload -o "${{ github.repository_owner }}" -r "${{ github.event.repository.name }}" -p .cr-release-packages --token "${{ secrets.GITHUB_TOKEN }}" --skip-existing
-          else
-            echo "No charts to upload"
-          fi
-      
-      # Update the Helm chart index
-      - name: Update and push chart index
-        if: steps.manual-filter.outputs.guard == 'true' || steps.manual-filter.outputs.watch == 'true' || steps.manual-filter.outputs.path == 'true'
-        run: |
-          if [ -n "$(ls -A .cr-release-packages)" ]; then
-            echo "Updating Helm chart index..."
-            cr index -o "${{ github.repository_owner }}" -r "${{ github.event.repository.name }}" -p .cr-release-packages --push
-          else
-            echo "No charts to index"
-          fi
+          echo "Releasing path chart..."
+          cr upload -o "${{ github.repository_owner }}" -r "${{ github.event.repository.name }}" -p .cr-release-packages-path --token "${{ secrets.GITHUB_TOKEN }}" --skip-existing
+          cr index -o "${{ github.repository_owner }}" -r "${{ github.event.repository.name }}" -p .cr-release-packages-path --push
         env:
           CR_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
