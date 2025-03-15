@@ -48,30 +48,35 @@ jobs:
           echo "Changed files:"
           git diff --name-only HEAD~1 HEAD
       
-      - name: Check for chart changes
-        id: filter
-        uses: dorny/paths-filter@v2
-        with:
-          base: '${{ github.event.before }}'  # Use the explicit before commit from the push event
-          filters: |
-            guard:
-              - 'charts/guard/**'
-              - '!charts/watch/**'
-              - '!charts/path/**'
-            watch:
-              - 'charts/watch/**'
-              - '!charts/guard/**'
-              - '!charts/path/**'
-            path:
-              - 'charts/path/**'
-              - '!charts/guard/**'
-              - '!charts/watch/**'
+# Manual detection of chart changes
+      - name: Detect chart changes
+        id: manual-filter
+        run: |
+          # Get list of changed files
+          CHANGED_FILES=$(git diff --name-only ${{ github.event.before }} ${{ github.sha }} || git diff --name-only $(git rev-parse HEAD~1) $(git rev-parse HEAD))
+          echo "Changed files: $CHANGED_FILES"
+          
+          # Initialize outputs
+          echo "guard=false" >> $GITHUB_OUTPUT
+          echo "watch=false" >> $GITHUB_OUTPUT
+          echo "path=false" >> $GITHUB_OUTPUT
+          
+          # Check if each chart directory has changes
+          echo "$CHANGED_FILES" | grep -q "charts/guard/" && echo "guard=true" >> $GITHUB_OUTPUT
+          echo "$CHANGED_FILES" | grep -q "charts/watch/" && echo "watch=true" >> $GITHUB_OUTPUT
+          echo "$CHANGED_FILES" | grep -q "charts/path/" && echo "path=true" >> $GITHUB_OUTPUT
+          
+          # Output results for logging
+          echo "Guard chart changed: $(echo "$CHANGED_FILES" | grep -q "charts/guard/" && echo "true" || echo "false")"
+          echo "Watch chart changed: $(echo "$CHANGED_FILES" | grep -q "charts/watch/" && echo "true" || echo "false")"
+          echo "Path chart changed: $(echo "$CHANGED_FILES" | grep -q "charts/path/" && echo "true" || echo "false")"
       
+      # Debug chart changes
       - name: Debug chart changes
         run: |
-          echo "Guard changed: ${{ steps.filter.outputs.guard }}"
-          echo "Watch changed: ${{ steps.filter.outputs.watch }}"
-          echo "Path changed: ${{ steps.filter.outputs.path }}"
+          echo "Guard changed: ${{ steps.manual-filter.outputs.guard }}"
+          echo "Watch changed: ${{ steps.manual-filter.outputs.watch }}"
+          echo "Path changed: ${{ steps.manual-filter.outputs.path }}"
       
       # Download existing index file if it exists
       - name: Prepare index
@@ -87,20 +92,15 @@ jobs:
             echo "generated: $(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> .cr-index/index.yaml
           fi
       
-      # Create temporary local Helm repo for inter-chart dependencies
-      - name: Setup local Helm repo
+      # Prepare local chart dependencies
+      - name: Setup local charts directory
         run: |
-          mkdir -p .cr-local-repo
-          echo "apiVersion: v1" > .cr-local-repo/index.yaml
-          echo "entries: {}" >> .cr-local-repo/index.yaml
-          echo "generated: $(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> .cr-local-repo/index.yaml
-          helm repo add local-repo file://$(pwd)/.cr-local-repo
+          # Create temporary directory for local charts
+          mkdir -p .cr-local-charts
       
-      # Process charts sequentially, checking for dependencies
-      # The order here matters if charts depend on each other
       # Process guard chart first (assuming it's a base chart)
       - name: Process guard chart
-        if: steps.filter.outputs.guard == 'true'
+        if: steps.manual-filter.outputs.guard == 'true'
         run: |
           echo "Processing guard chart..."
           
@@ -111,51 +111,55 @@ jobs:
           helm dependency build charts/guard
           helm package charts/guard -d .cr-release-packages
           
-          # Add to local repo for other charts to reference
-          helm repo index .cr-release-packages --url file://$(pwd)/.cr-release-packages --merge .cr-local-repo/index.yaml
-          cp .cr-release-packages/index.yaml .cr-local-repo/
-          helm repo update
+          # Copy to local charts directory for dependency resolution
+          cp .cr-release-packages/guard-*.tgz .cr-local-charts/ || true
       
       # Process watch chart second (may depend on guard)
       - name: Process watch chart
-        if: steps.filter.outputs.watch == 'true'
+        if: steps.manual-filter.outputs.watch == 'true'
         run: |
           echo "Processing watch chart..."
           
-          # Check if chart has local dependencies and update them
-          if grep -q "repository: file://" charts/watch/Chart.yaml; then
-            echo "Updating local dependencies..."
-            sed -i 's|repository: file://.*|repository: "file://$(pwd)/.cr-local-repo"|g' charts/watch/Chart.yaml
+          # If there are local dependencies, try to resolve them
+          if grep -q "name: guard" charts/watch/Chart.yaml; then
+            echo "Local dependency detected, adding local chart"
+            GUARD_TGZ=$(ls -1 .cr-local-charts/guard-*.tgz 2>/dev/null || echo "")
+            if [ -n "$GUARD_TGZ" ]; then
+              mkdir -p charts/watch/charts
+              cp $GUARD_TGZ charts/watch/charts/
+            fi
           fi
           
           # Build dependencies and package
-          helm dependency update charts/watch
+          helm dependency build charts/watch
           helm package charts/watch -d .cr-release-packages
           
-          # Add to local repo for other charts to reference
-          helm repo index .cr-release-packages --url file://$(pwd)/.cr-release-packages --merge .cr-local-repo/index.yaml
-          cp .cr-release-packages/index.yaml .cr-local-repo/
-          helm repo update
+          # Copy to local charts directory for dependency resolution
+          cp .cr-release-packages/watch-*.tgz .cr-local-charts/ || true
       
       # Process path chart last (may depend on guard or watch)
       - name: Process path chart
-        if: steps.filter.outputs.path == 'true'
+        if: steps.manual-filter.outputs.path == 'true'
         run: |
           echo "Processing path chart..."
           
-          # Check if chart has local dependencies and update them
-          if grep -q "repository: file://" charts/path/Chart.yaml; then
-            echo "Updating local dependencies..."
-            sed -i 's|repository: file://.*|repository: "file://$(pwd)/.cr-local-repo"|g' charts/path/Chart.yaml
+          # If there are local dependencies, try to resolve them
+          if grep -q "name: guard\|name: watch" charts/path/Chart.yaml; then
+            echo "Local dependency detected, adding local charts"
+            DEPENDENCY_TGZS=$(ls -1 .cr-local-charts/*.tgz 2>/dev/null || echo "")
+            if [ -n "$DEPENDENCY_TGZS" ]; then
+              mkdir -p charts/path/charts
+              cp .cr-local-charts/*.tgz charts/path/charts/
+            fi
           fi
           
           # Build dependencies and package
-          helm dependency update charts/path
+          helm dependency build charts/path
           helm package charts/path -d .cr-release-packages
       
       # Upload all packaged charts at once
       - name: Upload charts
-        if: steps.filter.outputs.guard == 'true' || steps.filter.outputs.watch == 'true' || steps.filter.outputs.path == 'true'
+        if: steps.manual-filter.outputs.guard == 'true' || steps.manual-filter.outputs.watch == 'true' || steps.manual-filter.outputs.path == 'true'
         run: |
           if [ -n "$(ls -A .cr-release-packages)" ]; then
             echo "Uploading packaged charts..."
@@ -164,9 +168,9 @@ jobs:
             echo "No charts to upload"
           fi
       
-      # Update the index file once
+      # Update and push index
       - name: Update and push index
-        if: steps.filter.outputs.guard == 'true' || steps.filter.outputs.watch == 'true' || steps.filter.outputs.path == 'true'
+        if: steps.manual-filter.outputs.guard == 'true' || steps.manual-filter.outputs.watch == 'true' || steps.manual-filter.outputs.path == 'true'
         run: |
           cr index -o "${{ github.repository_owner }}" -r "${{ github.event.repository.name }}" -p .cr-release-packages -c https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/ -i .cr-index/index.yaml
           
