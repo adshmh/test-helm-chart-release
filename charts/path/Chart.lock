@@ -1,0 +1,9 @@
+dependencies:
+- name: guard
+  repository: https://adshmh.github.io/test-helm-chart-release
+  version: 0.1.8
+- name: watch
+  repository: https://adshmh.github.io/test-helm-chart-release
+  version: 0.1.5
+digest: sha256:5788936219e0b9b9c0b6d00f91e435f3e03dab0accec839e01061335acd0a09c
+generated: "2025-03-15T10:58:03.802902547Z"
