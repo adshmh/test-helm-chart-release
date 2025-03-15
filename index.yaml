@@ -1,0 +1,14 @@
+apiVersion: v1
+entries:
+  watch:
+  - apiVersion: v2
+    appVersion: 1.16.0
+    created: "2025-03-15T01:18:32.653577739Z"
+    description: A Helm chart for Kubernetes
+    digest: 3326f9f086cef67ef26f83fe7304f7494e6b427ad97ec8cee7d7d41978f61498
+    name: watch
+    type: application
+    urls:
+    - https://github.com/adshmh/test-helm-chart-release/releases/download/watch-0.1.4/watch-0.1.4.tgz
+    version: 0.1.4
+generated: "2025-03-15T01:18:32.653582979Z"
